@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MiniChat - komsanai</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap" rel="stylesheet">
+<style>body{font-family:'Cairo',sans-serif}</style>
+</head>
+<body class="bg-[#0a0a0a] text-white min-h-screen">
+<div class="max-w-6xl mx-auto p-4 md:p-8">
+  <div class="flex justify-between items-center mb-8">
+    <h1 class="text-2xl font-bold">🔥 MiniChat <span class="text-zinc-500 text-sm">komsanai</span></h1>
+    <div id="userInfo" class="text-sm text-zinc-400">غير مسجل</div>
+  </div>
+
+  <div id="loginBox" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
+    <h2 class="text-xl font-bold mb-2">اربط حساب الانستجرام</h2>
+    <p class="text-zinc-400 mb-6 text-sm">هتسجل دخول بفيسبوك وهيجيب البيدج والانستجرام البيزنس المربوط بيها</p>
+    <a href="/auth/login" class="inline-block bg-[#1877f2] hover:bg-[#166fe5] text-white px-8 py-3 rounded-full font-bold">سجل دخول بفيسبوك</a>
+    <div class="mt-6 text-xs text-zinc-500">
+      App ID: 1871938613969451<br>
+      لازم الانستجرام يكون Business ومربوط بصفحة فيسبوك
+    </div>
+  </div>
+
+  <div id="dashboard" class="hidden grid md:grid-cols-3 gap-6">
+    <div class="md:col-span-2 space-y-6">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+        <h3 class="font-bold mb-3">📸 اختار بوست</h3>
+        <div id="mediaList" class="grid grid-cols-2 gap-3 max-h-[500px] overflow-auto">جاري التحميل...</div>
+      </div>
+    </div>
+    <div class="space-y-6">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+        <h3 class="font-bold mb-3">⚙️ إعداد الأوتوميشن</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="text-xs text-zinc-400">كلمة التشغيل (Keyword)</label>
+            <input id="keyword" value="لينك" class="w-full bg-black border border-zinc-800 rounded-lg p-2.5 mt-1 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-zinc-400">رد عام على الكومنت</label>
+            <input id="publicReply" value="بعتلك اللينك في الخاص 🔥" class="w-full bg-black border border-zinc-800 rounded-lg p-2.5 mt-1 text-sm">
+          </div>
+          <div>
+            <label class="text-xs text-zinc-400">رسالة الخاص + اللينك</label>
+            <textarea id="dmText" class="w-full bg-black border border-zinc-800 rounded-lg p-2.5 mt-1 text-sm h-20">أهلا بيك ❤️ ده اللينك اللي طلبته: {{link}}</textarea>
+          </div>
+          <div>
+            <label class="text-xs text-zinc-400">اللينك اللي هيتبعت</label>
+            <input id="link" placeholder="https://..." class="w-full bg-black border border-zinc-800 rounded-lg p-2.5 mt-1 text-sm">
+          </div>
+          <div class="flex items-center gap-2 py-2">
+            <input type="checkbox" id="requireFollow" class="rounded">
+            <label for="requireFollow" class="text-xs">لازم يعمل متابعة الأول (Follow Gate)</label>
+          </div>
+          <button onclick="saveAutomation()" class="w-full bg-white text-black font-bold py-2.5 rounded-full text-sm">💾 حفظ وتفعيل</button>
+          <div id="saveStatus" class="text-xs text-center text-zinc-500"></div>
+        </div>
+      </div>
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
+        <h3 class="font-bold mb-2 text-sm">📋 الأوتوميشنات النشطة</h3>
+        <div id="activeList" class="space-y-2 text-xs"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let igId = null;
+let selectedMedia = null;
+const params = new URLSearchParams(window.location.search);
+igId = params.get('ig_id') || localStorage.getItem('ig_id');
+const username = params.get('username') || localStorage.getItem('username');
+
+if(igId){
+  localStorage.setItem('ig_id', igId);
+  if(username) localStorage.setItem('username', username);
+  document.getElementById('loginBox').classList.add('hidden');
+  document.getElementById('dashboard').classList.remove('hidden');
+  document.getElementById('userInfo').innerText = '@' + (username || igId);
+  loadMedia();
+  loadAutomations();
+} else {
+  // check if already logged but no url params
+  if(localStorage.getItem('ig_id')){
+    igId = localStorage.getItem('ig_id');
+    document.getElementById('loginBox').classList.add('hidden');
+    document.getElementById('dashboard').classList.remove('hidden');
+    document.getElementById('userInfo').innerText = '@' + (localStorage.getItem('username') || igId);
+    loadMedia();
+    loadAutomations();
+  }
+}
+
+async function loadMedia(){
+  document.getElementById('mediaList').innerHTML = 'جاري تحميل البوستات...';
+  try{
+    const r = await fetch(`/api/media/${igId}`);
+    const data = await r.json();
+    if(data.error){ document.getElementById('mediaList').innerHTML = data.error; return; }
+    const list = data.data || [];
+    if(list.length==0){ document.getElementById('mediaList').innerHTML = 'مفيش بوستات'; return; }
+    document.getElementById('mediaList').innerHTML = list.map(m => `
+      <div onclick="selectMedia('${m.id}')" id="m_${m.id}" class="cursor-pointer border border-zinc-800 rounded-xl overflow-hidden hover:border-white transition ${selectedMedia==m.id?'border-white ring-1 ring-white':''}">
+        <img src="${m.thumbnail_url || m.media_url}" class="w-full h-32 object-cover">
+        <div class="p-2 text-[11px] text-zinc-400 truncate">${(m.caption||'').substring(0,60)}</div>
+      </div>
+    `).join('');
+  }catch(e){ document.getElementById('mediaList').innerHTML = 'خطأ: '+e; }
+}
+
+function selectMedia(id){
+  selectedMedia = id;
+  document.querySelectorAll('[id^="m_"]').forEach(el=>el.classList.remove('border-white','ring-1','ring-white'));
+  document.getElementById('m_'+id).classList.add('border-white','ring-1','ring-white');
+  document.getElementById('saveStatus').innerText = '✅ اخترت البوست: '+id;
+}
+
+async function saveAutomation(){
+  if(!selectedMedia){ alert('اختار بوست الأول من على الشمال'); return; }
+  const link = document.getElementById('link').value;
+  if(!link){ alert('حط اللينك'); return; }
+  const payload = {
+    media_id: selectedMedia,
+    keyword: document.getElementById('keyword').value || 'لينك',
+    public_replies: [document.getElementById('publicReply').value],
+    dm_with_link: document.getElementById('dmText').value,
+    link: link,
+    require_follow: document.getElementById('requireFollow').checked,
+    ig_id: igId
+  };
+  const r = await fetch('/api/automations', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+  const d = await r.json();
+  document.getElementById('saveStatus').innerText = d.success ? '✅ اتفعل! جرب تكتب "لينك" في كومنت على البوست' : 'خطأ: '+(d.error||'');
+  loadAutomations();
+}
+
+async function loadAutomations(){
+  const r = await fetch('/api/automations');
+  const data = await r.json();
+  const list = Object.entries(data);
+  document.getElementById('activeList').innerHTML = list.length==0 ? '<span class="text-zinc-600">لسه مفيش</span>' : list.map(([mid, a])=>`
+    <div class="bg-black border border-zinc-800 rounded-lg p-2 flex justify-between items-center">
+      <div><div class="font-bold">${a.keyword}</div><div class="text-zinc-500 truncate w-32">${a.link}</div></div>
+      <button onclick="deleteAuto('${mid}')" class="text-red-400">حذف</button>
+    </div>
+  `).join('');
+}
+
+async function deleteAuto(mid){
+  await fetch('/api/automations?media_id='+mid, {method:'DELETE'});
+  loadAutomations();
+}
+</script>
+</body>
+</html>
